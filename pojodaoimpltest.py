@@ -49,11 +49,21 @@ def makeFuncSuffix(c):
 def findByCall(dao,c):
     return dao+".findBy"+makeFuncSuffix(c)+"("+', '.join([sqlVarToVar(x) for x in c])+");"
 
+def findByCallArg(dao, c):
+    return dao+".findBy"+makeFuncSuffix(c)+"("+','.join(["\""+vc[0]+"0\"" for vc in c])+");"
+
 def updateCall(dao,c1, c2):
     return dao+".update"+ makeFuncSuffix(c2)+"By"+makeFuncSuffix(c1)+"("+','.join([sqlVarToVar(x) for x in c1+c2])+");"
 
 def saveCall(dao, c):
     return dao+".save("+sqlVarToVar(c)+");"
+
+def makeGet(c):
+    return "get"+c[0].upper()+c[1:]+"()"
+
+def makeSet(c):
+    return "set"+c[0].upper()+c[1:]+"()"
+
 state = 0
 daoHeadPrinted = False
 
@@ -162,4 +172,68 @@ for func in updateFuncArray:
 
 method = "void save(POJO"+sqlVarToClass(table)+" "+sqlVarToVar(table)+")"
 method +="{"+saveCall(dao,table)+"}"
-print method
+print method+"\n"
+
+#generate test
+print "@RunWith(SpringJUnit4ClassRunner.class)"
+print "@ContextConfiguration(locations = \"classpath:applicationContext.xml\")\n"
+
+print "public static final Logger LOGGER = LoggerFactory.getLogger("+sqlVarToClass(table)+"DAOTest.class);\n"
+
+print "@Autowired\nprivate "+sqlVarToClass(table)+"DAO " + dao+";\n"
+
+print "@Override\n@Before\npublic void setUp() throws Exception {\nsuper.setUp();\n}\n"
+print "@Override\n@After\npublic void tearDown() throws Exception {\nsuper.tearDown();\n}\n"
+
+#generate  find test
+print "@Test"
+print "public void testFind() throws Exception {"
+print "Statement st = conn.createStatement();"
+print "try{"
+pstmt = "PreparedStatement pstmt = conn.prepareStatement(\"insert into \" + PosSessionDAO.TABLE + \"(\" + PosSessionDAO.FIELDS + \") values \""
+
+timeAllCount=0
+values=[]
+for i in range(5):
+    t=[]
+    for c in cols:
+        if colsType[c]=="Timestamp":
+            t.append('?')
+            timeAllCount+=1
+        elif colsType[c] == "int" or colsType[c] == "long":
+            t.append(str(1))
+        else:
+            t.append('\''+c[0]+str(i)+'\'');
+    values.append("("+','.join(t)+")")
+pstmt=pstmt+",".join(values)+"\")"
+print pstmt+"\n"
+
+if timeAllCount>0:
+    print "Timestamp t0 = new Timestamp(System.currentTimeMillis());"
+    for i in range(1, timeAllCount):
+        print "Timestamp t"+str(i)+"= new Timestamp(t0.getTime()+"+str(i)+"*5*60*1000);"
+
+    for i in range(timeAllCount):
+            print "pstmt.setTimestamp("+str(i+1)+",t"+str(i)+");"
+
+print "\npstmt.executeUpdate();\npstmt.close();\n"
+print "POJO"+sqlVarToClass(table)+ " pojo;"
+print "POJO"+sqlVarToClass(table)+" pojos"
+for func in findFuncArray:
+    print "\n"
+    if func[1]=="1":
+        print "pojo="+findByCallArg(dao, func[0])
+        print "Assert.assertNotNull(pojo);"
+        for c in cols:
+                if getColsType(c) == "Timestamp":
+                    continue
+                print "Assert.asserEquals(\""+c[0]+"0\", pojo."+makeGet(c)+");"
+    else:
+        print "pojos="+findByCallArg(dao, func[0])
+        print "Assert.assertFalse(pojos.isEmpty())"
+        for c in cols:
+                if getColsType(c) == "Timestamp":
+                    continue
+                print "Assert.asserEquals(\""+c[0]+"0\", pojos.get(0)."+makeGet(c)+");"
+
+print "} finally {\nst.close();\n}\n}"
