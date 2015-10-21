@@ -46,6 +46,14 @@ def makeSqlAssign(c):
 def makeFuncSuffix(c):
     return "And".join([sqlVarToClass(x) for x in c])
 
+def findByCall(dao,c):
+    return dao+".findBy"+makeFuncSuffix(c)+"("+', '.join([sqlVarToVar(x) for x in c])+");"
+
+def updateCall(dao,c1, c2):
+    return dao+".update"+ makeFuncSuffix(c2)+"By"+makeFuncSuffix(c1)+"("+','.join([sqlVarToVar(x) for x in c1+c2])+");"
+
+def saveCall(dao, c):
+    return dao+".save("+sqlVarToVar(c)+");"
 state = 0
 daoHeadPrinted = False
 
@@ -143,11 +151,15 @@ for func in findFuncArray:
     else:
         method+="List<POJO"+sqlVarToClass(table)+">"
     method+=(" findBy"+makeFuncSuffix(func[0])+"("+", ".join([sqlVarToFuncParam(x) for x in func[0]])+")")
-    method+=("{"+dao+".findBy"+makeFuncSuffix(func[0])+"("+', '.join([sqlVarToVar(x) for x in func[0]])+");}")
+    method+="{"+findByCall(dao, func[0])+"}"
     print method+"\n"
 
 for func in updateFuncArray:
     method = "public void update"
-    method += makeFuncSuffix(func[1])+"By"+makeFuncSuffix(func[0])+"("+", ".join([sqlVarToFuncParam(x) for x in func[0]+func[1]])+")"
-    method+=("{"+dao+".update"+ makeFuncSuffix(func[1])+"By"+makeFuncSuffix(func[0])+"("+','.join([sqlVarToVar(x) for x in func[0]+func[1]])+")}")
+    method+= makeFuncSuffix(func[1])+"By"+makeFuncSuffix(func[0])+"("+", ".join([sqlVarToFuncParam(x) for x in func[0]+func[1]])+")"
+    method+="{"+updateCall(dao, func[0], func[1])+"}"
     print method+"\n"
+
+method = "void save(POJO"+sqlVarToClass(table)+" "+sqlVarToVar(table)+")"
+method +="{"+saveCall(dao,table)+"}"
+print method
