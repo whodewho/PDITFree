@@ -1,93 +1,111 @@
 from string import Template
 
-columns = []
+cols = []
 table = ""
-columnsType = {}
+colsType = {}
 
-def title(x):
+def makeClass(x):
     return ''.join([word[0].upper() + word[1:] for word in x.split('_')])
 
-def vTitle(x):
-    t = title(x)
+def makeVar(x):
+    t = makeClass(x)
     return t[0].lower()+t[1:]
 
-def makeArg(c):
-    vc = vTitle(c)
-    return "@SQLParam(\""+vc+"\") "+columnsType[c]+" "+vc
+def getColsType(c):
+    if c in colsType:
+        return colsType[c]
+    else:
+        return "Timestamp"
 
-#generate pojo variables
+def makeFunArg(c):
+    vc = makeVar(c)
+    return "@SQLParam(\""+vc+"\") "+getColsType(c)+" "+vc
+
+def makeWhereSql(c):
+    if " " not in c:
+        return ":"+makeVar(c)+"="+c
+    else:
+         cArray=c.split(' ')
+         return ":"+makeVar(cArray[0])+" "+' '.join(cArray[1:])
+
+def makeWhereVar(c):
+    if " " not in c:
+        return c
+    else:
+        return c.split(" ")[0]
+
+def makeAssignment(c):
+    return c+"=:"+makeVar(c)
+
+state = 0
+daoHeadPrinted = False
+
 with open('s') as f:
-     for line in f:
-	if "CREATE TABLE IF NOT EXISTS" in line:
-	    table = line.split(' ')[5]
-	    #print table+"\n"
+    for line in f:
+        if line=="\n":
+            state=(state+1)%3
             continue
 
-     	c = line[line.index('`')+1:line.rindex('`')]
-	columns.append(c)
+        if 0==state:
+            if "CREATE TABLE IF NOT EXISTS" in line:
+                table = line.split(' ')[5]
+                continue
 
-	t = ""
-        if "BIGINT" in line:
-	    t = "long"
-        elif "VARCHAR" in line:
-            t = "String"
-        elif "TIMESTAMP" in line:
-            t = "Timestamp"
-        elif "TINYINT" in line or "INT" in line:
-            t = "int"
+            c = line[line.index('`')+1:line.rindex('`')]
+            cols.append(c)
+
+            t = "NULL"
+            if "BIGINT" in line:
+                t = "long"
+            elif "VARCHAR" in line:
+                t = "String"
+            elif "TIMESTAMP" in line:
+                t = "Timestamp"
+            elif "TINYINT" in line or "INT" in line:
+                t = "int"
+            else:
+                print "what the fuck!!"
+            colsType[c]=t
+
+            print "private",t,c+";\n"
+        elif 1 == state:
+            if not daoHeadPrinted:
+                print "static final String TABLE = \""+table+"\";\n"
+                cols = cols[1:]
+                #print "//"+",".join(cols)+"\n"
+                print "static final String FIELDS = \""+','.join(cols)+"\";\n"
+                daoHeadPrinted = True
+                continue
+            if "find" in line:
+                continue
+
+            line = line.strip(' #\n')
+            lineArray = line.split(':')
+            whereArray = lineArray[0].split(',')
+            print "@SQL(\"SELECT \" + FIELDS + \" FROM \" + TABLE + \" WHERE " + " AND ".join([makeWhereSql(c) for c in whereArray])+"\")"
+            whereVars = [makeWhereVar(c) for c in whereArray]
+
+            method=""
+            if lineArray[1]=="1":
+                method+="POJO"+makeClass(table)
+            else:
+                method+="List<POJO"+makeClass(table)+">"
+            method+=(" findBy"+"And".join([makeClass(x) for x in whereVars])+"("+", ".join([makeFunArg(x) for x in whereVars])+")\n")
+            print method
         else:
-	    print "what the fuck!!"
-	columnsType[c]=t
+            if "update" in line:
+                continue;
 
-        print "private",t,c+";\n"
-
-print "----------POJO END------------\n"
-
-print "static final String TABLE = \""+table+"\";\n"
-
-print "//"+",".join(columns)+"\n"
-#id is mostly useless
-columns = columns[1:]
-print "static final String FIELDS = \""+','.join(columns)+"\";\n"
-
-pojoType = "POJO"+title(table)
-vPOJOType = "pojo"+title(table)
-
-#todo: consider unique index, query with multiple args and return lists
-#generate dao finds
-#find{
-#a,b>*
-#b>1
-#}
-for c in columns:
-    if c == "status" or c == "valid":
-        continue
-
-    vc = vTitle(c)
-    if columnsType[c] == "Timestamp":
-        print "@SQL(\"SELECT \" + FIELDS + \" FROM \" + TABLE + \" WHERE "+c+"<:currentTime)"
-    	print "List<"+pojoType+"> findBy"+title(c)+"(@SQLParam(\"currentTime\") "+columnsType[c]+" currentTime);\n"
-        continue
-
-    print "@SQL(\"SELECT \" + FIELDS + \" FROM \" + TABLE + \" WHERE "+c+"=:"+vc+"\")"
-    print pojoType, "findBy"+title(c)+"("+makeArg(c)+");\n"
-
+            line = line.strip(' #\n')
+            lineArray = line.split(':')
+            whereArray = lineArray[0].split(',')
+            whereVars = [makeWhereVar(c) for c in whereArray]
+            assignVars = lineArray[1].split(',')
+            print "@SQL(\"UPDATE \" + TABLE + \" SET "+','.join([makeAssignment(c) for c in assignVars])+" WHERE" +  " AND ".join([makeWhereSql(c) for c in whereArray])+"\")"
+            whereVars = [makeWhereVar(c) for c in whereArray]
+            print "void update"+''.join([makeClass(c) for c in assignVars])+"By"+''.join([makeClass(c) for c in whereVars])+"("+", ".join([makeFunArg(x) for x in whereVars])+")\n"
 
 #generate dao save
-values=":p."+", :p.".join(columns)
+values=":p."+", :p.".join(cols)
 print "@SQL(\"INSERT INTO \" + TABLE + \"(\" + FIELDS + \") VALUES ("+ values+")\")"
-print "void save("+makeArg(c)+");"
-
-#generate dao update
-#update{
-#a,b>e,f
-#a>f
-#}
-for c in columns:
-    vc = vTitle(c)
-
-    if c == "status" or c == "valid":
-	print "@SQL(\"UPDATE \" + TABLE + \" SET "+c+"=:"+c+" WHERE XXX=:XXX\")"
-	print "void update(@SQLParam(\""+vc+"\") "+columnsType[c]+" "+vc+");\n"
-	
-
+print "void save(@SQLParam(\"p\") POJO"+makeClass(table)+" "+makeVar(table)+");"

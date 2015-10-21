@@ -1,12 +1,17 @@
-CREATE TABLE IF NOT EXISTS user_coupon (
+CREATE TABLE IF NOT EXISTS pos_session (
   `id`          BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-  `user_id`     VARCHAR(16)         NOT NULL,
-  `coupon_id`   BIGINT(20)          NOT NULL,
-  `create_time` TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `start_time`  TIMESTAMP           NOT NULL,
+  `session_id`  VARCHAR(40)         NOT NULL,
+  `pos_id`      VARCHAR(32)         NOT NULL,
+  `cashier_id`  VARCHAR(16)         NOT NULL,
+  `merchant_id` VARCHAR(16)         NOT NULL,
+  `create_time` TIMESTAMP           NOT NULL,
   `expire_time` TIMESTAMP           NOT NULL,
-  `usage_time`  TIMESTAMP           NOT NULL,
   `valid`       TINYINT             NOT NULL DEFAULT 1,
 
-  PRIMARY KEY (`id`),
-  KEY `idx_usercoupon_userid` (`user_id`)
+  # find
+  # session_id:1
+  # session_id,currentTime between create_time and expire_time:*
+  # session_id,currentTime < expire_time:*
+
+  # update
+  # session_id:expire_time
