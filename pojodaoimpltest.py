@@ -50,7 +50,13 @@ def findByCall(dao,c):
     return dao+".findBy"+makeFuncSuffix(c)+"("+', '.join([sqlVarToVar(x) for x in c])+");"
 
 def findByCallArg(dao, c):
-    return dao+".findBy"+makeFuncSuffix(c)+"("+','.join(["\""+vc[0]+"0\"" for vc in c])+");"
+    args = []
+    for vc in c:
+        if getColsType(vc) == "Timestamp":
+            args.append("t0")
+        else:
+            args.append("\""+vc[0]+"0\"")
+    return dao+".findBy"+makeFuncSuffix(c)+"("+','.join(args)+");"
 
 def updateCall(dao,c1, c2):
     return dao+".update"+ makeFuncSuffix(c2)+"By"+makeFuncSuffix(c1)+"("+','.join([sqlVarToVar(x) for x in c1+c2])+");"
@@ -61,8 +67,17 @@ def saveCall(dao, c):
 def makeGet(c):
     return "get"+c[0].upper()+c[1:]+"()"
 
-def makeSet(c):
-    return "set"+c[0].upper()+c[1:]+"()"
+def makeSet(c, v):
+    return "set"+c[0].upper()+c[1:]+"("+str(v)+")"
+
+def makeAsserts(cols, v):
+    for c in cols:
+        if getColsType(c) == "Timestamp":
+            continue
+        elif getColsType(c) == "int" or getColsType == "long":
+            print "Assert.asserEquals(1, "+v+"."+makeGet(c)+");"
+        else:
+            print "Assert.asserEquals(\""+c[0]+"0\", "+v+"."+makeGet(c)+");"
 
 state = 0
 daoHeadPrinted = False
@@ -185,21 +200,21 @@ print "@Autowired\nprivate "+sqlVarToClass(table)+"DAO " + dao+";\n"
 print "@Override\n@Before\npublic void setUp() throws Exception {\nsuper.setUp();\n}\n"
 print "@Override\n@After\npublic void tearDown() throws Exception {\nsuper.tearDown();\n}\n"
 
-#generate  find test
-print "@Test"
-print "public void testFind() throws Exception {"
-print "Statement st = conn.createStatement();"
-print "try{"
+#generate  find test start
+print "@Test\npublic void testFind() throws Exception {\nStatement st = conn.createStatement();\ntry{"
 pstmt = "PreparedStatement pstmt = conn.prepareStatement(\"insert into \" + PosSessionDAO.TABLE + \"(\" + PosSessionDAO.FIELDS + \") values \""
 
 timeAllCount=0
+timeRowCount=0
 values=[]
 for i in range(5):
     t=[]
+    timeRowCount=0
     for c in cols:
         if colsType[c]=="Timestamp":
             t.append('?')
             timeAllCount+=1
+            timeRowCount+=1
         elif colsType[c] == "int" or colsType[c] == "long":
             t.append(str(1))
         else:
@@ -212,7 +227,6 @@ if timeAllCount>0:
     print "Timestamp t0 = new Timestamp(System.currentTimeMillis());"
     for i in range(1, timeAllCount):
         print "Timestamp t"+str(i)+"= new Timestamp(t0.getTime()+"+str(i)+"*5*60*1000);"
-
     for i in range(timeAllCount):
             print "pstmt.setTimestamp("+str(i+1)+",t"+str(i)+");"
 
@@ -224,16 +238,39 @@ for func in findFuncArray:
     if func[1]=="1":
         print "pojo="+findByCallArg(dao, func[0])
         print "Assert.assertNotNull(pojo);"
-        for c in cols:
-                if getColsType(c) == "Timestamp":
-                    continue
-                print "Assert.asserEquals(\""+c[0]+"0\", pojo."+makeGet(c)+");"
+        makeAsserts(cols, "pojo")
     else:
         print "pojos="+findByCallArg(dao, func[0])
-        print "Assert.assertFalse(pojos.isEmpty())"
-        for c in cols:
-                if getColsType(c) == "Timestamp":
-                    continue
-                print "Assert.asserEquals(\""+c[0]+"0\", pojos.get(0)."+makeGet(c)+");"
+        print "Assert.assertFalse(pojos.isEmpty());"
+        print "pojo=pojos.get(0);"
+        makeAsserts(cols, "pojo")
 
 print "} finally {\nst.close();\n}\n}"
+#generate find test end
+
+#generate save start
+print "@Test\npublic void testSave() throws Exception {\nStatement st = conn.createStatement();\ntry{"
+print "POJO"+sqlVarToClass(table)+" pojo = new POJO"+sqlVarToClass(table)+"();"
+
+if timeRowCount>0:
+    print "Timestamp t0 = new Timestamp(System.currentTimeMillis());"
+    for i in range(1, timeRowCount):
+        print "Timestamp t"+str(i)+"= new Timestamp(t0.getTime()+"+str(i)+"*5*60*1000);"
+
+timeRowIndex=0
+for  c in cols:
+    if getColsType(c) == "Timestamp":
+        print "pojo."+makeSet(c, "t"+str(timeRowIndex))
+        timeRowIndex+=1
+    elif getColsType(c) == "int" or getColsType(c) == "long":
+        print "pojo."+makeSet(c, 1)
+    else:
+        print "pojo."+makeSet(c, "\""+c[0]+"0\"")
+print
+print dao+".save(pojo)\n"
+
+print "POJO"+sqlVarToClass(table)+ " rt =  dao.findByXXX"
+makeAsserts(cols, "rt")
+
+print "} finally {\nst.close();\n}\n}"
+#generate save end
