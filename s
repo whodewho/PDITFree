@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS pos_session (
   # session_id:1
   # session_id,currentTime between create_time and expire_time:*
   # session_id,currentTime < expire_time:*
+  # session_id,pos_id:*
 
   # update
   # session_id:expire_time
+  # session_id,pos_id:valid,expire_time

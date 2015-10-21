@@ -4,11 +4,11 @@ cols = []
 table = ""
 colsType = {}
 
-def makeClass(x):
+def sqlVarToClass(x):
     return ''.join([word[0].upper() + word[1:] for word in x.split('_')])
 
-def makeVar(x):
-    t = makeClass(x)
+def sqlVarToVar(x):
+    t = sqlVarToClass(x)
     return t[0].lower()+t[1:]
 
 def getColsType(c):
@@ -17,16 +17,16 @@ def getColsType(c):
     else:
         return "Timestamp"
 
-def makeFunArg(c):
-    vc = makeVar(c)
+def sqlVarToDAOParam(c):
+    vc = sqlVarToVar(c)
     return "@SQLParam(\""+vc+"\") "+getColsType(c)+" "+vc
 
-def makeWhereSql(c):
+def makeSqlWhere(c):
     if " " not in c:
-        return ":"+makeVar(c)+"="+c
+        return ":"+sqlVarToVar(c)+"="+c
     else:
          cArray=c.split(' ')
-         return ":"+makeVar(cArray[0])+" "+' '.join(cArray[1:])
+         return ":"+sqlVarToVar(cArray[0])+" "+' '.join(cArray[1:])
 
 def makeWhereVar(c):
     if " " not in c:
@@ -34,8 +34,8 @@ def makeWhereVar(c):
     else:
         return c.split(" ")[0]
 
-def makeAssignment(c):
-    return c+"=:"+makeVar(c)
+def makeSqlAssign(c):
+    return c+"=:"+sqlVarToVar(c)
 
 state = 0
 daoHeadPrinted = False
@@ -82,15 +82,15 @@ with open('s') as f:
             line = line.strip(' #\n')
             lineArray = line.split(':')
             whereArray = lineArray[0].split(',')
-            print "@SQL(\"SELECT \" + FIELDS + \" FROM \" + TABLE + \" WHERE " + " AND ".join([makeWhereSql(c) for c in whereArray])+"\")"
+            print "@SQL(\"SELECT \" + FIELDS + \" FROM \" + TABLE + \" WHERE " + " AND ".join([makeSqlWhere(c) for c in whereArray])+"\")"
             whereVars = [makeWhereVar(c) for c in whereArray]
 
             method=""
             if lineArray[1]=="1":
-                method+="POJO"+makeClass(table)
+                method+="POJO"+sqlVarToClass(table)
             else:
-                method+="List<POJO"+makeClass(table)+">"
-            method+=(" findBy"+"And".join([makeClass(x) for x in whereVars])+"("+", ".join([makeFunArg(x) for x in whereVars])+")\n")
+                method+="List<POJO"+sqlVarToClass(table)+">"
+            method+=(" findBy"+"And".join([sqlVarToClass(x) for x in whereVars])+"("+", ".join([sqlVarToDAOParam(x) for x in whereVars])+");\n")
             print method
         else:
             if "update" in line:
@@ -101,11 +101,12 @@ with open('s') as f:
             whereArray = lineArray[0].split(',')
             whereVars = [makeWhereVar(c) for c in whereArray]
             assignVars = lineArray[1].split(',')
-            print "@SQL(\"UPDATE \" + TABLE + \" SET "+','.join([makeAssignment(c) for c in assignVars])+" WHERE" +  " AND ".join([makeWhereSql(c) for c in whereArray])+"\")"
+            print "@SQL(\"UPDATE \" + TABLE + \" SET "+','.join([makeSqlAssign(c) for c in assignVars])+" WHERE" +  " AND ".join([makeSqlWhere(c) for c in whereArray])+"\")"
             whereVars = [makeWhereVar(c) for c in whereArray]
-            print "void update"+''.join([makeClass(c) for c in assignVars])+"By"+''.join([makeClass(c) for c in whereVars])+"("+", ".join([makeFunArg(x) for x in whereVars])+")\n"
+            print "void update"+'And'.join([sqlVarToClass(c) for c in assignVars])+"By"+'And'.join([sqlVarToClass(c) for c in whereVars])+"("+", ".join([sqlVarToDAOParam(x) for x in (whereVars+assignVars)])+");\n"
 
 #generate dao save
 values=":p."+", :p.".join(cols)
 print "@SQL(\"INSERT INTO \" + TABLE + \"(\" + FIELDS + \") VALUES ("+ values+")\")"
-print "void save(@SQLParam(\"p\") POJO"+makeClass(table)+" "+makeVar(table)+");"
+print "void save(@SQLParam(\"p\") POJO"+sqlVarToClass(table)+" "+sqlVarToVar(table)+");"
+
