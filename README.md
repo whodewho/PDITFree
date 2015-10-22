@@ -1,6 +1,6 @@
 # PDITFree
 
-如果你受够了Spring框架下无休止的POJO+DAO+IMPL+TEST代码，跑下这个脚本(python pditfree.py)，PDIT Free
+如果你受够了Spring框架下无休止的POJO+DAO+IMPL+TEST代码，跑下这个脚本，PDIT Free
 
 先写一个预处理文件s
 
