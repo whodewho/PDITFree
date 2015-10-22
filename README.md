@@ -43,4 +43,4 @@ CREATE TABLE IF NOT EXISTS pos_session (
 
 觉得文档难写，是因为你废话太多
 
-边用边改，边做边爱
+边用边改
