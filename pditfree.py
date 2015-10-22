@@ -61,6 +61,24 @@ def findByWithArg(dao, c):
 def updateWithVar(dao,c1, c2):
     return dao+".update"+ makeFuncSuffix(c2)+"By"+makeFuncSuffix(c1)+"("+','.join([sqlVarToVar(x) for x in c1+c2])+");"
 
+def updateWithArg(dao, c1, c2):
+    args = []
+    for vc in c1:
+        if getColsType(vc) == "Timestamp":
+            #generate new timestamp for update
+            args.append("t0")
+        elif getColsType(vc) == "long" or getColsType(vc) == "int":
+            args.append("0")
+        else:
+            args.append("\""+vc[0]+"0\"")
+    for vc in c2:
+        if getColsType(vc) == "Timestamp":
+            args.append("tn")
+        else:
+            args.append("\""+vc[0]+"n\"")
+
+    return dao+".update"+makeFuncSuffix(c2)+"By"+makeFuncSuffix(c1)+"("+','.join(args)+");"
+
 def saveWithVar(dao, c):
     return dao+".save("+sqlVarToVar(c)+");"
 
@@ -78,6 +96,34 @@ def makeAsserts(cols, v):
             print "Assert.assertEquals(1, "+v+"."+makeGet(c)+");"
         else:
             print "Assert.assertEquals(\""+c[0]+"0\", "+v+"."+makeGet(c)+");"
+
+def makeUpdateAsserts(c2, v):
+    for c in c2:
+        if getColsType(c) == "Timestamp":
+            print "Assert.assertEquals(tn,"+v+"."+makeGet(c)+");"
+        elif getColsType(c) == "int" or getColsType == "long":
+            print "Assert.assertEquals(0, "+v+"."+makeGet(c)+");"
+        else:
+            print "Assert.assertEquals(\""+c[0]+"1\", "+v+"."+makeGet(c)+");"
+
+def makePOJOWithSet():
+    print POJOClass+" pojo = new "+POJOClass+"();"
+
+    if timeRowCount>0:
+        print "Timestamp t0 = new Timestamp(System.currentTimeMillis());"
+        for i in range(1, timeRowCount):
+            print "Timestamp t"+str(i)+"= new Timestamp(t0.getTime()+"+str(i)+"*5*60*1000);"
+
+    timeRowIndex=0
+    for  c in cols:
+        if getColsType(c) == "Timestamp":
+            print "pojo."+makeSet(c, "t"+str(timeRowIndex))
+            timeRowIndex+=1
+        elif getColsType(c) == "int" or getColsType(c) == "long":
+            print "pojo."+makeSet(c, 1)
+        else:
+            print "pojo."+makeSet(c, "\""+c[0]+"0\"")
+    print
 
 state = 0
 daoHeadPrinted = False
@@ -253,30 +299,33 @@ print
 
 #generate save start
 print "@Test\npublic void testSave() throws Exception {\nStatement st = conn.createStatement();\ntry{"
-print POJOClass+" pojo = new "+POJOClass+"();"
-
-if timeRowCount>0:
-    print "Timestamp t0 = new Timestamp(System.currentTimeMillis());"
-    for i in range(1, timeRowCount):
-        print "Timestamp t"+str(i)+"= new Timestamp(t0.getTime()+"+str(i)+"*5*60*1000);"
-
-timeRowIndex=0
-for  c in cols:
-    if getColsType(c) == "Timestamp":
-        print "pojo."+makeSet(c, "t"+str(timeRowIndex))
-        timeRowIndex+=1
-    elif getColsType(c) == "int" or getColsType(c) == "long":
-        print "pojo."+makeSet(c, 1)
-    else:
-        print "pojo."+makeSet(c, "\""+c[0]+"0\"")
-print
+makePOJOWithSet()
 print dao+".save(pojo);\n"
 
+uniqueFunc=[]
 for func in findFuncArray:
     if func[1]=="1":
+        uniqueFunc = func
         print POJOClass + " rt = " + findByWithArg(dao, func[0])
         break
 makeAsserts(cols, "rt")
 
 print "} finally {\nst.close();\n}\n}"
+print
 #generate save end
+
+#generate update start
+print "@Test\npublic void testUpdate() throws Exception {\nStatement st = conn.createStatement();\ntry{"
+makePOJOWithSet()
+
+print "Timestamp tn= new Timestamp(t0.getTime()+5*60*1000);"
+print POJOClass + " rt;\n"
+for func in updateFuncArray:
+    print updateWithArg(dao, func[0], func[1])
+    print "rt = " + findByWithArg(dao, uniqueFunc[0])
+    makeUpdateAsserts(func[1], "rt")
+    print
+
+print "} finally {\nst.close();\n}\n}"
+print
+#generate update end
