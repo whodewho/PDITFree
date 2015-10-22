@@ -7,9 +7,9 @@
 第一部分是SQL，是的，只拷贝这么多
 
 第二部分是find
-> * session_id:1指用id查询返回1个结果
-> * session_id,currentTime between create_time and expire_time:*,where里面有两个constrain
-> * Equal单写，运算符要写全，逗号分割；返回1个用'1'，多个用'*'，前后':'分割
+> * session_id:1，指用id查询返回1个结果
+> * session_id,currentTime between create_time and expire_time:*，where里有两个约束，非列变量用驼峰
+> * Equal单写，运算符要写全，逗号分割；返回1个用'1'，多个用'*'；前后':'分割
 
 第三部分是update
 > * 前后':'分割，前面是key，后面是要变更的value
