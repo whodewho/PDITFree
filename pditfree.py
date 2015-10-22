@@ -27,14 +27,14 @@ def sqlVarToFuncParam(c):
     vc = sqlVarToVar(c)
     return getColsType(c)+" "+vc
 
-def makeSqlWhere(c):
+def makeSqlWhereEqual(c):
     if " " not in c:
         return ":"+sqlVarToVar(c)+"="+c
     else:
          cArray=c.split(' ')
          return ":"+sqlVarToVar(cArray[0])+" "+' '.join(cArray[1:])
 
-def makeWhereVar(c):
+def makeSqlWhereVar(c):
     if " " not in c:
         return c
     else:
@@ -46,10 +46,10 @@ def makeSqlAssign(c):
 def makeFuncSuffix(c):
     return "And".join([sqlVarToClass(x) for x in c])
 
-def findByCall(dao,c):
+def findByWithVar(dao,c):
     return dao+".findBy"+makeFuncSuffix(c)+"("+', '.join([sqlVarToVar(x) for x in c])+");"
 
-def findByCallArg(dao, c):
+def findByWithArg(dao, c):
     args = []
     for vc in c:
         if getColsType(vc) == "Timestamp":
@@ -58,10 +58,10 @@ def findByCallArg(dao, c):
             args.append("\""+vc[0]+"0\"")
     return dao+".findBy"+makeFuncSuffix(c)+"("+','.join(args)+");"
 
-def updateCall(dao,c1, c2):
+def updateWithVar(dao,c1, c2):
     return dao+".update"+ makeFuncSuffix(c2)+"By"+makeFuncSuffix(c1)+"("+','.join([sqlVarToVar(x) for x in c1+c2])+");"
 
-def saveCall(dao, c):
+def saveWithVar(dao, c):
     return dao+".save("+sqlVarToVar(c)+");"
 
 def makeGet(c):
@@ -85,6 +85,9 @@ daoHeadPrinted = False
 findFuncArray=[]
 updateFuncArray=[]
 
+POJOClass=""
+POJOVar=""
+
 with open('s') as f:
     for line in f:
         if line=="\n":
@@ -94,6 +97,8 @@ with open('s') as f:
         if 0==state:
             if "CREATE TABLE IF NOT EXISTS" in line:
                 table = line.split(' ')[5]
+                POJOClass = "POJO"+sqlVarToClass(table)
+                POJOVar = sqlVarToVar(table)
                 continue
 
             c = line[line.index('`')+1:line.rindex('`')]
@@ -110,7 +115,7 @@ with open('s') as f:
             elif "TINYINT" in line or "INT" in line:
                 t = "int"
             else:
-                print "what the fuck!!"
+                print "What?!"
             colsType[c]=t
 
             print "private",t,c+";\n"
@@ -129,16 +134,16 @@ with open('s') as f:
             line = line.strip(' #\n')
             lineArray = line.split(':')
             whereArray = lineArray[0].split(',')
-            print "@SQL(\"SELECT \" + FIELDS + \" FROM \" + TABLE + \" WHERE " + " AND ".join([makeSqlWhere(c) for c in whereArray])+"\")"
-            whereSqlVars = [makeWhereVar(c) for c in whereArray]
-            findFuncArray.append([whereSqlVars, lineArray[1]])
+            print "@SQL(\"SELECT \" + FIELDS + \" FROM \" + TABLE + \" WHERE " + " AND ".join([makeSqlWhereEqual(c) for c in whereArray])+"\")"
+            sqlWhereVars = [makeSqlWhereVar(c) for c in whereArray]
+            findFuncArray.append([sqlWhereVars, lineArray[1]])
 
             method=""
             if lineArray[1]=="1":
-                method+="POJO"+sqlVarToClass(table)
+                method+=POJOClass
             else:
-                method+="List<POJO"+sqlVarToClass(table)+">"
-            method+=(" findBy"+makeFuncSuffix(whereSqlVars)+"("+", ".join([sqlVarToDAOParam(x) for x in whereSqlVars])+");\n")
+                method+="List<"+POJOClass+">"
+            method+=(" findBy"+makeFuncSuffix(sqlWhereVars)+"("+", ".join([sqlVarToDAOParam(x) for x in sqlWhereVars])+");\n")
             print method
         else:
             #generate dao update
@@ -148,45 +153,42 @@ with open('s') as f:
             line = line.strip(' #\n')
             lineArray = line.split(':')
             whereArray = lineArray[0].split(',')
-            whereSqlVars = [makeWhereVar(c) for c in whereArray]
-            assignSqlVars = lineArray[1].split(',')
-            print "@SQL(\"UPDATE \" + TABLE + \" SET "+','.join([makeSqlAssign(c) for c in assignSqlVars])+" WHERE" +  " AND ".join([makeSqlWhere(c) for c in whereArray])+"\")"
-            whereSqlVars = [makeWhereVar(c) for c in whereArray]
-            updateFuncArray.append([whereSqlVars, assignSqlVars])
+            sqlWhereVars = [makeSqlWhereVar(c) for c in whereArray]
+            sqlAssignVars = lineArray[1].split(',')
+            print "@SQL(\"UPDATE \" + TABLE + \" SET "+','.join([makeSqlAssign(c) for c in sqlAssignVars])+" WHERE" +  " AND ".join([makeSqlWhereEqual(c) for c in whereArray])+"\")"
+            sqlWhereVars = [makeSqlWhereVar(c) for c in whereArray]
+            updateFuncArray.append([sqlWhereVars, sqlAssignVars])
 
-            print "void update"+makeFuncSuffix(assignSqlVars)+"By"+makeFuncSuffix(whereSqlVars)+"("+", ".join([sqlVarToDAOParam(x) for x in (whereSqlVars+assignSqlVars)])+");\n"
+            print "void update"+makeFuncSuffix(sqlAssignVars)+"By"+makeFuncSuffix(sqlWhereVars)+"("+", ".join([sqlVarToDAOParam(x) for x in (sqlWhereVars+sqlAssignVars)])+");\n"
 
 #generate dao save
 values=":p."+", :p.".join(cols)
 print "@SQL(\"INSERT INTO \" + TABLE + \"(\" + FIELDS + \") VALUES ("+ values+")\")"
-print "void save(@SQLParam(\"p\") POJO"+sqlVarToClass(table)+" "+sqlVarToVar(table)+");\n"
-
-#print findFuncArray
-#print updateFuncArray
+print "void save(@SQLParam(\"p\") "+POJOClass+" "+POJOVar+");\n"
 
 #generate impl
 print "@Autowired"
-dao = sqlVarToVar(table)+"DAO"
-print  sqlVarToClass(table)+"DAO "+dao+";\n"
+dao = POJOVar+"DAO"
+print  POJOClass+"DAO "+dao+";\n"
 
 for func in findFuncArray:
     method = "public "
     if  func[1]=="1":
-        method+="POJO"+sqlVarToClass(table)
+        method+=POJOClass
     else:
-        method+="List<POJO"+sqlVarToClass(table)+">"
+        method+="List<"+POJOClass+">"
     method+=(" findBy"+makeFuncSuffix(func[0])+"("+", ".join([sqlVarToFuncParam(x) for x in func[0]])+")")
-    method+="{"+findByCall(dao, func[0])+"}"
+    method+="{"+findByWithVar(dao, func[0])+"}"
     print method+"\n"
 
 for func in updateFuncArray:
     method = "public void update"
     method+= makeFuncSuffix(func[1])+"By"+makeFuncSuffix(func[0])+"("+", ".join([sqlVarToFuncParam(x) for x in func[0]+func[1]])+")"
-    method+="{"+updateCall(dao, func[0], func[1])+"}"
+    method+="{"+updateWithVar(dao, func[0], func[1])+"}"
     print method+"\n"
 
-method = "void save(POJO"+sqlVarToClass(table)+" "+sqlVarToVar(table)+")"
-method +="{"+saveCall(dao,table)+"}"
+method = "void save("+POJOClass+" "+POJOVar+")"
+method +="{"+saveWithVar(dao,table)+"}"
 print method+"\n"
 
 #generate test
@@ -231,16 +233,16 @@ if timeAllCount>0:
             print "pstmt.setTimestamp("+str(i+1)+",t"+str(i)+");"
 
 print "\npstmt.executeUpdate();\npstmt.close();\n"
-print "POJO"+sqlVarToClass(table)+ " pojo;"
-print "POJO"+sqlVarToClass(table)+" pojos"
+print POJOClass+ " pojo;"
+print "List<"+POJOClass+">"+" pojos=new ArrayList<"+POJOClass+">();"
 for func in findFuncArray:
     print "\n"
     if func[1]=="1":
-        print "pojo="+findByCallArg(dao, func[0])
+        print "pojo="+findByWithArg(dao, func[0])
         print "Assert.assertNotNull(pojo);"
         makeAsserts(cols, "pojo")
     else:
-        print "pojos="+findByCallArg(dao, func[0])
+        print "pojos="+findByWithArg(dao, func[0])
         print "Assert.assertFalse(pojos.isEmpty());"
         print "pojo=pojos.get(0);"
         makeAsserts(cols, "pojo")
@@ -250,7 +252,7 @@ print "} finally {\nst.close();\n}\n}"
 
 #generate save start
 print "@Test\npublic void testSave() throws Exception {\nStatement st = conn.createStatement();\ntry{"
-print "POJO"+sqlVarToClass(table)+" pojo = new POJO"+sqlVarToClass(table)+"();"
+print POJOClass+" pojo = new "+POJOClass+"();"
 
 if timeRowCount>0:
     print "Timestamp t0 = new Timestamp(System.currentTimeMillis());"
@@ -269,7 +271,7 @@ for  c in cols:
 print
 print dao+".save(pojo)\n"
 
-print "POJO"+sqlVarToClass(table)+ " rt =  dao.findByXXX"
+print POJOClass+ " rt =  dao.findByXXX"
 makeAsserts(cols, "rt")
 
 print "} finally {\nst.close();\n}\n}"
