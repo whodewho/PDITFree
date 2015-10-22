@@ -35,7 +35,7 @@ def makeSqlWhereEqual(c):
          return ":"+sqlVarToVar(cArray[0])+" "+' '.join(cArray[1:])
 
 def makeSqlWhereVar(c):
-    if " " not in c:
+    if all([x not in c for x in ["<", ">", "between"]]):
         return c
     else:
         return c.split(" ")[0]
