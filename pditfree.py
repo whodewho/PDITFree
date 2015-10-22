@@ -28,8 +28,8 @@ def sqlVarToFuncParam(c):
     return getColsType(c)+" "+vc
 
 def makeSqlWhereEqual(c):
-    if " " not in c:
-        return ":"+sqlVarToVar(c)+"="+c
+    if all([x not in c for x in ["<", ">", "between"]]):
+        return c+" = :"+sqlVarToVar(c)
     else:
          cArray=c.split(' ')
          return ":"+sqlVarToVar(cArray[0])+" "+' '.join(cArray[1:])
@@ -68,16 +68,16 @@ def makeGet(c):
     return "get"+c[0].upper()+c[1:]+"()"
 
 def makeSet(c, v):
-    return "set"+c[0].upper()+c[1:]+"("+str(v)+")"
+    return "set"+c[0].upper()+c[1:]+"("+str(v)+");"
 
 def makeAsserts(cols, v):
     for c in cols:
         if getColsType(c) == "Timestamp":
             continue
         elif getColsType(c) == "int" or getColsType == "long":
-            print "Assert.asserEquals(1, "+v+"."+makeGet(c)+");"
+            print "Assert.assertEquals(1, "+v+"."+makeGet(c)+");"
         else:
-            print "Assert.asserEquals(\""+c[0]+"0\", "+v+"."+makeGet(c)+");"
+            print "Assert.assertEquals(\""+c[0]+"0\", "+v+"."+makeGet(c)+");"
 
 state = 0
 daoHeadPrinted = False
@@ -155,7 +155,7 @@ with open('s') as f:
             whereArray = lineArray[0].split(',')
             sqlWhereVars = [makeSqlWhereVar(c) for c in whereArray]
             sqlAssignVars = lineArray[1].split(',')
-            print "@SQL(\"UPDATE \" + TABLE + \" SET "+','.join([makeSqlAssign(c) for c in sqlAssignVars])+" WHERE" +  " AND ".join([makeSqlWhereEqual(c) for c in whereArray])+"\")"
+            print "@SQL(\"UPDATE \" + TABLE + \" SET "+','.join([makeSqlAssign(c) for c in sqlAssignVars])+" WHERE " +  " AND ".join([makeSqlWhereEqual(c) for c in whereArray])+"\")"
             sqlWhereVars = [makeSqlWhereVar(c) for c in whereArray]
             updateFuncArray.append([sqlWhereVars, sqlAssignVars])
 
@@ -169,7 +169,7 @@ print "void save(@SQLParam(\"p\") "+POJOClass+" "+POJOVar+");\n"
 #generate impl
 print "@Autowired"
 dao = POJOVar+"DAO"
-print  POJOClass+"DAO "+dao+";\n"
+print  sqlVarToClass(table)+"DAO "+dao+";\n"
 
 for func in findFuncArray:
     method = "public "
@@ -178,7 +178,7 @@ for func in findFuncArray:
     else:
         method+="List<"+POJOClass+">"
     method+=(" findBy"+makeFuncSuffix(func[0])+"("+", ".join([sqlVarToFuncParam(x) for x in func[0]])+")")
-    method+="{"+findByWithVar(dao, func[0])+"}"
+    method+="{return "+findByWithVar(dao, func[0])+"}"
     print method+"\n"
 
 for func in updateFuncArray:
@@ -204,7 +204,7 @@ print "@Override\n@After\npublic void tearDown() throws Exception {\nsuper.tearD
 
 #generate  find test start
 print "@Test\npublic void testFind() throws Exception {\nStatement st = conn.createStatement();\ntry{"
-pstmt = "PreparedStatement pstmt = conn.prepareStatement(\"insert into \" + PosSessionDAO.TABLE + \"(\" + PosSessionDAO.FIELDS + \") values \""
+pstmt = "PreparedStatement pstmt = conn.prepareStatement(\"insert into \" + PosSessionDAO.TABLE + \"(\" + PosSessionDAO.FIELDS + \") values "
 
 timeAllCount=0
 timeRowCount=0
@@ -222,7 +222,7 @@ for i in range(5):
         else:
             t.append('\''+c[0]+str(i)+'\'');
     values.append("("+','.join(t)+")")
-pstmt=pstmt+",".join(values)+"\")"
+pstmt=pstmt+",".join(values)+"\");"
 print pstmt+"\n"
 
 if timeAllCount>0:
@@ -248,6 +248,7 @@ for func in findFuncArray:
         makeAsserts(cols, "pojo")
 
 print "} finally {\nst.close();\n}\n}"
+print
 #generate find test end
 
 #generate save start
@@ -269,9 +270,12 @@ for  c in cols:
     else:
         print "pojo."+makeSet(c, "\""+c[0]+"0\"")
 print
-print dao+".save(pojo)\n"
+print dao+".save(pojo);\n"
 
-print POJOClass+ " rt =  dao.findByXXX"
+for func in findFuncArray:
+    if func[1]=="1":
+        print POJOClass + " rt = " + findByWithArg(dao, func[0])
+        break
 makeAsserts(cols, "rt")
 
 print "} finally {\nst.close();\n}\n}"
