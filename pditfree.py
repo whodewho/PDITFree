@@ -134,6 +134,7 @@ updateFuncArray=[]
 POJOClass=""
 POJOVar=""
 
+print "---------------------------------------------POJO-----------------------------------------------------------"
 with open('s') as f:
     for line in f:
         if line=="\n":
@@ -168,6 +169,12 @@ with open('s') as f:
         elif 1 == state:
             #generate dao find
             if not daoHeadPrinted:
+                print "---------------------------------------------DAO-----------------------------------------------------------"
+                print "import net.paoding.rose.jade.annotation.DAO;\n\
+                import net.paoding.rose.jade.annotation.SQL;\n\
+                import net.paoding.rose.jade.annotation.SQLParam;\n\
+                @DAO"
+
                 print "static final String TABLE = \""+table+"\";\n"
                 cols = cols[1:]
                 #print "//"+",".join(cols)+"\n"
@@ -213,6 +220,11 @@ print "@SQL(\"INSERT INTO \" + TABLE + \"(\" + FIELDS + \") VALUES ("+ values+")
 print "void save(@SQLParam(\"p\") "+POJOClass+" "+POJOVar+");\n"
 
 #generate impl
+print "---------------------------------------------IMPL-----------------------------------------------------------"
+print "import org.springframework.beans.factory.annotation.Autowired;\n\
+import org.springframework.stereotype.Service;\n\n\
+@Service\n"
+
 print "@Autowired"
 dao = POJOVar+"DAO"
 print  sqlVarToClass(table)+"DAO "+dao+";\n"
@@ -238,6 +250,21 @@ method +="{"+saveWithVar(dao,table)+"}"
 print method+"\n"
 
 #generate test
+print "---------------------------------------------TEST-----------------------------------------------------------"
+print "import org.junit.After;import org.junit.Assert;\n\
+import org.junit.Before;\n\
+import org.junit.Test;\n\
+import org.junit.runner.RunWith;\n\
+import org.slf4j.Logger;\n\
+import org.slf4j.LoggerFactory;\n\
+import org.springframework.beans.factory.annotation.Autowired;\n\
+import org.springframework.test.context.ContextConfiguration;\n\
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;\n\
+import java.sql.PreparedStatement;\n\
+import java.sql.Statement;\n\
+import java.util.ArrayList;\n\
+import java.util.List;\n"
+
 print "@RunWith(SpringJUnit4ClassRunner.class)"
 print "@ContextConfiguration(locations = \"classpath:applicationContext.xml\")\n"
 
@@ -250,7 +277,7 @@ print "@Override\n@After\npublic void tearDown() throws Exception {\nsuper.tearD
 
 #generate  find test start
 print "@Test\npublic void testFind() throws Exception {\nStatement st = conn.createStatement();\ntry{"
-pstmt = "PreparedStatement pstmt = conn.prepareStatement(\"insert into \" + PosSessionDAO.TABLE + \"(\" + PosSessionDAO.FIELDS + \") values "
+pstmt = "PreparedStatement pstmt = conn.prepareStatement(\"insert into \" + "+sqlVarToClass(table)+"DAO.TABLE + \"(\" + "+sqlVarToClass(table)+"DAO.FIELDS + \") values "
 
 timeAllCount=0
 timeRowCount=0
@@ -269,7 +296,7 @@ for i in range(5):
             t.append('\''+c[0]+str(i)+'\'');
     values.append("("+','.join(t)+")")
 pstmt=pstmt+",".join(values)+"\");"
-print pstmt+"\n"
+print pstmt
 
 if timeAllCount>0:
     print "Timestamp t0 = new Timestamp(System.currentTimeMillis());"
@@ -282,7 +309,6 @@ print "\npstmt.executeUpdate();\npstmt.close();\n"
 print POJOClass+ " pojo;"
 print "List<"+POJOClass+">"+" pojos=new ArrayList<"+POJOClass+">();"
 for func in findFuncArray:
-    print "\n"
     if func[1]=="1":
         print "pojo="+findByWithArg(dao, func[0])
         print "Assert.assertNotNull(pojo);"
@@ -315,17 +341,18 @@ print
 #generate save end
 
 #generate update start
-print "@Test\npublic void testUpdate() throws Exception {\nStatement st = conn.createStatement();\ntry{"
-makePOJOWithSet()
+if len(updateFuncArray):
+    print "@Test\npublic void testUpdate() throws Exception {\nStatement st = conn.createStatement();\ntry{"
+    makePOJOWithSet()
 
-print "Timestamp tn= new Timestamp(t0.getTime()+5*60*1000);"
-print POJOClass + " rt;\n"
-for func in updateFuncArray:
-    print updateWithArg(dao, func[0], func[1])
-    print "rt = " + findByWithArg(dao, uniqueFunc[0])
-    makeUpdateAsserts(func[1], "rt")
+    print "Timestamp tn= new Timestamp(t0.getTime()+5*60*1000);"
+    print POJOClass + " rt;\n"
+    for func in updateFuncArray:
+        print updateWithArg(dao, func[0], func[1])
+        print "rt = " + findByWithArg(dao, uniqueFunc[0])
+        makeUpdateAsserts(func[1], "rt")
+        print
+
+    print "} finally {\nst.close();\n}\n}"
     print
-
-print "} finally {\nst.close();\n}\n}"
-print
-#generate update end
+    #generate update end
