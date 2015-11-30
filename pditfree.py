@@ -63,6 +63,10 @@ def findByWithArg(dao, c):
     for vc in c:
         if getColsType(vc) == "Timestamp":
             args.append("t0")
+        elif getColsType(vc) == 'Time':
+            args.append("time0")
+        elif getColsType(vc) == "long" or getColsType(vc) == "int":
+            args.append("0")
         else:
             args.append("\"" + vc[0] + "0\"")
     return dao + ".findBy" + makeFuncSuffix(c) + "(" + ','.join(args) + ");"
@@ -75,20 +79,16 @@ def updateWithVar(dao, c1, c2):
 
 def updateWithArg(dao, c1, c2):
     args = []
-    for vc in c1:
+    for vc in c1+c2:
         if getColsType(vc) == "Timestamp":
             # generate new timestamp for update
-            args.append("t0")
+            args.append("tn")
+        elif getColsType(vc) == 'Time':
+            args.append("timen")
         elif getColsType(vc) == "long" or getColsType(vc) == "int":
             args.append("0")
         else:
-            args.append("\"" + vc[0] + "0\"")
-    for vc in c2:
-        if getColsType(vc) == "Timestamp":
-            args.append("tn")
-        else:
-            args.append("\"" + vc[0] + "n\"")
-
+            args.append("\"" + vc[0] + "1\"")
     return dao + ".update" + makeFuncSuffix(c2) + "By" + makeFuncSuffix(c1) + "(" + ','.join(args) + ");"
 
 
@@ -108,8 +108,10 @@ def makeAsserts(f, cols, v):
     for c in cols:
         if getColsType(c) == "Timestamp":
             continue
+        if getColsType(c) == 'Time':
+            continue
         elif getColsType(c) == "int" or getColsType == "long":
-            f.write("Assert.assertEquals(1, " + v + "." + makeGet(c) + ");\n\n")
+            f.write("Assert.assertEquals(1, " + v + "." + makeGet(c) + ");\n")
         else:
             f.write("Assert.assertEquals(\"" + c[0] + "0\", " + v + "." + makeGet(c) + ");\n")
     f.write("\n")
@@ -118,7 +120,9 @@ def makeAsserts(f, cols, v):
 def makeUpdateAsserts(f, c2, v):
     for c in c2:
         if getColsType(c) == "Timestamp":
-            f.write("Assert.assertEquals(tn," + v + "." + makeGet(c) + ");\n\n")
+            f.write("Assert.assertEquals(tn," + v + "." + makeGet(c) + ");\n")
+        if getColsType(c) == "Time":
+            f.write("Assert.assertEquals(timen," + v + "." + makeGet(c) + ");\n")
         elif getColsType(c) == "int" or getColsType == "long":
             f.write("Assert.assertEquals(0, " + v + "." + makeGet(c) + ");\n")
         else:
@@ -129,15 +133,24 @@ def makeUpdateAsserts(f, c2, v):
 def makePOJOWithSet(f):
     f.write(POJOClass + " pojo = new " + POJOClass + "();\n")
 
-    if timeRowCount > 0:
+    if timestampRowCount > 0:
         f.write("Timestamp t0 = new Timestamp(System.currentTimeMillis());\n")
-        for i in range(1, timeRowCount):
+        for i in range(1, timestampRowCount):
             f.write("Timestamp t" + str(i) + "= new Timestamp(t0.getTime()+" + str(i) + "*5*60*1000);\n")
 
+    if timeRowCount > 0:
+        f.write("Time time0 = new Time(System.currentTimeMillis());\n")
+        for i in range(1, timeRowCount):
+            f.write("Time time" + str(i) + "= new Time(time0.getTime()+" + str(i) + "*5*60*1000);\n")
+
+    timestampRowIndex = 0
     timeRowIndex = 0
     for c in cols:
         if getColsType(c) == "Timestamp":
-            f.write("pojo." + makeSet(c, "t" + str(timeRowIndex)) + "\n")
+            f.write("pojo." + makeSet(c, "t" + str(timestampRowIndex)) + "\n")
+            timestampRowIndex += 1
+        elif getColsType(c) == "Time":
+            f.write("pojo." + makeSet(c, "time" + str(timeRowIndex)) + "\n")
             timeRowIndex += 1
         elif getColsType(c) == "int" or getColsType(c) == "long":
             f.write("pojo." + makeSet(c, 1) + "\n")
@@ -156,6 +169,8 @@ POJOVar = ""
 
 with open('s') as f:
     for line in f:
+        if "COMMENT" in line:
+            continue
         if line == "\n":
             state = (state + 1) % 3
             continue
@@ -170,18 +185,19 @@ with open('s') as f:
             c = line[line.index('`') + 1:line.rindex('`')]
             cols.append(c)
 
-            # generate pojo vars
             t = "NULL"
             if "BIGINT" in line:
                 t = "long"
-            elif "VARCHAR" in line:
+            elif "CHAR" in line:
                 t = "String"
             elif "TIMESTAMP" in line:
                 t = "Timestamp"
             elif "TINYINT" in line or "INT" in line:
                 t = "int"
+            elif "TIME" in line:
+                t="Time"
             else:
-                print "What?!"
+                print "What?!", line
             colsType[c] = t
 
         elif 1 == state:
@@ -193,7 +209,6 @@ with open('s') as f:
             whereArray = lineArray[0].split(',')
             findFuncArray.append([whereArray, lineArray[1]])
         else:
-            # generate dao update
             if "update" in line:
                 continue
 
@@ -204,6 +219,7 @@ with open('s') as f:
             updateFuncArray.append([whereArray, sqlAssignVars])
 
 with open(POJOClass + ".java", 'a') as f:
+    f.write("import java.sql.Timestamp;\n\n")
     f.write("public class " + POJOClass + "{\n\n")
     for c in cols:
         f.write("private " + colsType[c] + " " + c + ";\n\n")
@@ -212,6 +228,9 @@ with open(POJOClass + ".java", 'a') as f:
 with open(sqlVarToClass(table) + "DAO.java", 'a') as f:
     f.write("import net.paoding.rose.jade.annotation.DAO;\n")
     f.write("import net.paoding.rose.jade.annotation.SQL;\n")
+    f.write("import java.sql.Timestamp;\n")
+    f.write("import java.util.List;\n")
+    f.write("import java.sql.Timestamp;\n")
     f.write("import net.paoding.rose.jade.annotation.SQLParam;\n\n")
     f.write("@DAO\n")
     f.write("public interface " + sqlVarToClass(table) + "DAO {\n\n")
@@ -221,11 +240,11 @@ with open(sqlVarToClass(table) + "DAO.java", 'a') as f:
 
     for findFunc in findFuncArray:
         f.write("@SQL(\"SELECT \" + FIELDS + \" FROM \" + TABLE + \" WHERE " + " AND ".join(
-            [makeSqlWhereEqual(c) for c in findFunc[0]]) + ")\n")
+            [makeSqlWhereEqual(c) for c in findFunc[0]]) + "\")\n")
         sqlWhereVars = [makeSqlWhereVar(c) for c in findFunc[0]]
 
         method = ""
-        if lineArray[1] == "1":
+        if findFunc[1] == "1":
             method += POJOClass
         else:
             method += "List<" + POJOClass + ">"
@@ -237,10 +256,16 @@ with open(sqlVarToClass(table) + "DAO.java", 'a') as f:
     f.write("@SQL(\"INSERT INTO \" + TABLE + \"(\" + FIELDS + \") VALUES (" + values + ")\")\n")
     f.write("void save(@SQLParam(\"p\") " + POJOClass + " " + POJOVar + ");\n\n")
 
+    for updateFunc in updateFuncArray:
+        sqlWhereVars = [makeSqlWhereVar(c) for c in updateFunc[0]]
+        f.write("@SQL(\"UPDATE \" + TABLE + \" SET "+','.join(makeSqlAssign(c) for c in updateFunc[1]) +" WHERE "+"AND".join([makeSqlWhereEqual(c) for c in updateFunc[0]])+"\")\n")
+        f.write("void update"+makeFuncSuffix(updateFunc[1])+'By'+makeFuncSuffix(sqlWhereVars) +"("+','.join([sqlVarToDAOParam(x) for x in (sqlWhereVars+updateFunc[1])])+");\n\n")
+
     f.write("}")
 
 with open(sqlVarToClass(table) + "Impl.java", 'a') as f:
     f.write("import org.springframework.beans.factory.annotation.Autowired;\n")
+    f.write("import java.sql.Timestamp;\n")
     f.write("import org.springframework.stereotype.Service;\n\n")
     f.write("@Service\n")
     f.write("public class " + sqlVarToClass(table) + "Impl{\n\n")
@@ -250,23 +275,25 @@ with open(sqlVarToClass(table) + "Impl.java", 'a') as f:
     f.write(sqlVarToClass(table) + "DAO " + dao + ";\n\n")
 
     for func in findFuncArray:
+        sqlWhereVars = [makeSqlWhereVar(c) for c in func[0]]
         method = "public "
-    if func[1] == "1":
-        method += POJOClass
-    else:
-        method += "List<" + POJOClass + ">"
-        method += (" findBy" + makeFuncSuffix(func[0]) + "(" + ", ".join([sqlVarToFuncParam(x) for x in func[0]]) + ")")
-        method += "{return " + findByWithVar(dao, func[0]) + "}"
-    f.write(method + "\n\n")
+        if func[1] == "1":
+            method += POJOClass
+        else:
+            method += "List<" + POJOClass + ">"
+        method += (" findBy" + makeFuncSuffix(sqlWhereVars) + "(" + ", ".join([sqlVarToFuncParam(x) for x in sqlWhereVars]) + ")")
+        method += "{return " + findByWithVar(dao, sqlWhereVars) + "}"
+        f.write(method + "\n\n")
 
     for func in updateFuncArray:
+        sqlWhereVars = [makeSqlWhereVar(c) for c in func[0]]
         method = "public void update"
-    method += makeFuncSuffix(func[1]) + "By" + makeFuncSuffix(func[0]) + "(" + ", ".join(
-        [sqlVarToFuncParam(x) for x in func[0] + func[1]]) + ")"
-    method += "{" + updateWithVar(dao, func[0], func[1]) + "}"
-    f.write(method + "\n\n")
+        method += makeFuncSuffix(func[1]) + "By" + makeFuncSuffix(sqlWhereVars) + "(" + ", ".join(
+        [sqlVarToFuncParam(x) for x in sqlWhereVars + func[1]]) + ")"
+        method += "{" + updateWithVar(dao, sqlWhereVars, func[1]) + "}"
+        f.write(method + "\n\n")
 
-    method = "void save(" + POJOClass + " " + POJOVar + ")"
+    method = "public void save(" + POJOClass + " " + POJOVar + ")"
     method += "{" + saveWithVar(dao, table) + "}"
     f.write(method + "\n\n")
 
@@ -286,31 +313,39 @@ with open(sqlVarToClass(table) + "DAOTest.java", 'a') as f:
     f.write("import java.sql.PreparedStatement;\n")
     f.write("import java.sql.Statement;\n")
     f.write("import java.util.ArrayList;\n")
-    f.write("import java.util.List;\n")
+    f.write("import java.sql.Timestamp;\n")
+    f.write("import java.util.List;\n\n")
 
     f.write("@RunWith(SpringJUnit4ClassRunner.class)")
     f.write("@ContextConfiguration(locations = \"classpath:applicationContext.xml\")\n")
-    f.write("public class " + sqlVarToClass(table) + "DAOTest extends BaseDAOTest {\n")
-    f.write("public static final Logger LOGGER = LoggerFactory.getLogger(" + sqlVarToClass(table) + "DAOTest.class);\n")
+    f.write("public class " + sqlVarToClass(table) + "DAOTest extends BaseDAOTest {\n\n")
+    f.write("public static final Logger LOGGER = LoggerFactory.getLogger(" + sqlVarToClass(table) + "DAOTest.class);\n\n")
 
     dao = sqlVarToVar(table) + "DAO"
-    f.write("@Autowired\nprivate " + sqlVarToClass(table) + "DAO " + dao + ";\n")
+    f.write("@Autowired\nprivate " + sqlVarToClass(table) + "DAO " + dao + ";\n\n")
 
-    f.write("@Override\n@Before\npublic void setUp() throws Exception {\nsuper.setUp();\n}\n")
-    f.write("@Override\n@After\npublic void tearDown() throws Exception {\nsuper.tearDown();\n}\n")
+    f.write("@Override\n@Before\npublic void setUp() throws Exception {\nsuper.setUp();\n}\n\n")
+    f.write("@Override\n@After\npublic void tearDown() throws Exception {\nsuper.tearDown();\n}\n\n")
 
     f.write("@Test\npublic void testFind() throws Exception {\nStatement st = conn.createStatement();\ntry{")
     pstmt = "PreparedStatement pstmt = conn.prepareStatement(\"insert into \" + " + sqlVarToClass(
         table) + "DAO.TABLE + \"(\" + " + sqlVarToClass(table) + "DAO.FIELDS + \") values "
 
+    timestampAllCount = 0
+    timestampRowCount = 0
     timeAllCount = 0
     timeRowCount = 0
     values = []
     for i in range(5):
         t = []
+        timestampRowCount = 0
         timeRowCount = 0
         for c in cols:
             if colsType[c] == "Timestamp":
+                t.append('?')
+                timestampAllCount += 1
+                timestampRowCount += 1
+            elif colsType[c] == "Time":
                 t.append('?')
                 timeAllCount += 1
                 timeRowCount += 1
@@ -322,12 +357,18 @@ with open(sqlVarToClass(table) + "DAOTest.java", 'a') as f:
     pstmt = pstmt + ",".join(values) + "\");"
     f.write(pstmt + "\n\n")
 
-    if timeAllCount > 0:
+    if timestampAllCount > 0:
         f.write("Timestamp t0 = new Timestamp(System.currentTimeMillis());\n")
-        for i in range(1, timeAllCount):
+        for i in range(1, timestampAllCount):
             f.write("Timestamp t" + str(i) + "= new Timestamp(t0.getTime()+" + str(i) + "*5*60*1000);\n")
-        for i in range(timeAllCount):
+        for i in range(timestampAllCount):
             f.write("pstmt.setTimestamp(" + str(i + 1) + ",t" + str(i) + ");\n")
+    if timeAllCount > 0:
+        f.write("Time time0 = new Time(System.currentTimeMillis());\n")
+        for i in range(1, timeAllCount):
+            f.write("Time time" + str(i) + "= new Time(time0.getTime()+" + str(i) + "*5*60*1000);\n")
+        for i in range(timeAllCount):
+            f.write("pstmt.setTime(" + str(i + 1) + ",time" + str(i) + ");\n")
 
     f.write("\npstmt.executeUpdate();\npstmt.close();\n\n")
     f.write(POJOClass + " pojo;\n")
@@ -351,23 +392,29 @@ with open(sqlVarToClass(table) + "DAOTest.java", 'a') as f:
 
     uniqueFunc = []
     for func in findFuncArray:
+        sqlWhereVars = [makeSqlWhereVar(c) for c in func[0]]
         if func[1] == "1":
             uniqueFunc = func
-            f.write(POJOClass + " rt = " + findByWithArg(dao, func[0]))
+            f.write(POJOClass + " rt = " + findByWithArg(dao, sqlWhereVars))
             break
     makeAsserts(f, cols, "rt")
 
     f.write("} finally {\nst.close();\n}\n}\n\n")
 
+# remember, you cannot trust upate
     if len(updateFuncArray):
         f.write("@Test\npublic void testUpdate() throws Exception {\nStatement st = conn.createStatement();\ntry{\n\n")
         makePOJOWithSet(f)
+        f.write(dao + ".save(pojo);\n\n")
 
         f.write("Timestamp tn= new Timestamp(t0.getTime()+5*60*1000);")
+        f.write("Time timen = new Time(System.currentTimeMillis());")
         f.write(POJOClass + " rt;\n")
         for func in updateFuncArray:
-            f.write(updateWithArg(dao, func[0], func[1]) + "\n")
+            sqlWhereVars = [makeSqlWhereVar(c) for c in func[0]]
+            f.write(updateWithArg(dao, sqlWhereVars, func[1]) + "\n")
             f.write("rt = " + findByWithArg(dao, uniqueFunc[0]) + "\n")
             makeUpdateAsserts(f, func[1], "rt")
 
         f.write("} finally {\nst.close();\n}\n}")
+    f.write("\n}")
