@@ -36,15 +36,33 @@ def makeSqlWhereEqual(c):
         return c + " = :" + sqlVarToVar(c)
     else:
         cArray = c.split(' ')
-        return ":" + sqlVarToVar(cArray[0]) + " " + ' '.join(cArray[1:])
+        if cArray[0] in cols:
+            tmp = cArray[0] + " "
+            for x in cArray[1:]:
+                if any([x in ["and", ">", "<", "between"]]):
+                    tmp =  tmp + " " + x + " " 
+                else:
+                    tmp  = tmp + " :" + sqlVarToVar(x)
+            return tmp
+        else:
+            return " :"+sqlVarToVar(cArray[0]) + " "+' '.join(cArray[1:])
 
-
-def makeSqlWhereVar(c):
-    if all([x not in c for x in ["<", ">", "between"]]):
-        return c
-    else:
-        return c.split(" ")[0]
-
+def makeSqlWhereVars(func0):
+    tmp = []
+    for c in func0:
+        if c in cols and ' ' not in c:
+            tmp.append(c)
+        else:
+            cArray = c.split(' ')
+            def f(x): return x not in  ["and", ">", "<", "between"]
+            if cArray[0] in cols:
+                tmp.extend(filter(f, cArray[1:]))
+                for t in filter(f,cArray[1:]):
+                    colsType[t] = colsType[cArray[0]]
+            else:
+                tmp.append(cArray[0])
+                colsType[cArray[0]] = colsType[filter(f, cArray[1:])[0]]
+    return tmp
 
 def makeSqlAssign(c):
     return c + "=:" + sqlVarToVar(c)
@@ -148,7 +166,7 @@ with open(sqlVarToClass(table) + "DAO.java", 'a') as f:
     for findFunc in findFuncArray:
         f.write("@SQL(\"SELECT \" + FIELDS + \" FROM \" + TABLE + \" WHERE " + " AND ".join(
             [makeSqlWhereEqual(c) for c in findFunc[0]]) + "\")\n")
-        sqlWhereVars = [makeSqlWhereVar(c) for c in findFunc[0]]
+        sqlWhereVars = makeSqlWhereVars(findFunc[0])
 
         method = ""
         if findFunc[1] == "1":
@@ -164,7 +182,7 @@ with open(sqlVarToClass(table) + "DAO.java", 'a') as f:
     f.write("void save(@SQLParam(\"p\") " + POJOClass + " " + POJOVar + ");\n\n")
 
     for updateFunc in updateFuncArray:
-        sqlWhereVars = [makeSqlWhereVar(c) for c in updateFunc[0]]
+        sqlWhereVars = makeSqlWhereVars(updateFunc[0])
         f.write("@SQL(\"UPDATE \" + TABLE + \" SET "+','.join(makeSqlAssign(c) for c in updateFunc[1]) +" WHERE "+"AND".join([makeSqlWhereEqual(c) for c in updateFunc[0]])+"\")\n")
         f.write("void update"+makeFuncSuffix(updateFunc[1])+'By'+makeFuncSuffix(sqlWhereVars) +"("+','.join([sqlVarToDAOParam(x) for x in (sqlWhereVars+updateFunc[1])])+");\n\n")
 
@@ -182,7 +200,7 @@ with open(sqlVarToClass(table) + "Impl.java", 'a') as f:
     f.write(sqlVarToClass(table) + "DAO " + dao + ";\n\n")
 
     for func in findFuncArray:
-        sqlWhereVars = [makeSqlWhereVar(c) for c in func[0]]
+        sqlWhereVars = makeSqlWhereVars(func[0])
         method = "public "
         if func[1] == "1":
             method += POJOClass
@@ -193,7 +211,7 @@ with open(sqlVarToClass(table) + "Impl.java", 'a') as f:
         f.write(method + "\n\n")
 
     for func in updateFuncArray:
-        sqlWhereVars = [makeSqlWhereVar(c) for c in func[0]]
+        sqlWhereVars  = makeSqlWhereVars(func[0])
         method = "public void update"
         method += makeFuncSuffix(func[1]) + "By" + makeFuncSuffix(sqlWhereVars) + "(" + ", ".join(
         [sqlVarToFuncParam(x) for x in sqlWhereVars + func[1]]) + ")"
@@ -348,10 +366,10 @@ with open(sqlVarToClass(table) + "DAOTest.java", 'a') as f:
     f.write("List<" + POJOClass + ">" + " pojos=new ArrayList<" + POJOClass + ">();\n")
     for func in findFuncArray:
         if func[1] == "1":
-            f.write("pojo=" + findByWithArg(dao, [makeSqlWhereVar(c) for c in func[0]]) + "\n\n")
+            f.write("pojo=" + findByWithArg(dao,  makeSqlWhereVars(func[0])) + "\n\n")
             f.write("Assert.assertNotNull(pojo);\n")
         else:
-            f.write("pojos=" + findByWithArg(dao, [makeSqlWhereVar(c) for c in func[0]]) + "\n")
+            f.write("pojos=" + findByWithArg(dao, makeSqlWhereVars(func[0])) + "\n")
             f.write("Assert.assertFalse(pojos.isEmpty());\n")
             f.write("pojo=pojos.get(0);\n")
         makeAsserts(f, cols, "pojo")
@@ -364,7 +382,7 @@ with open(sqlVarToClass(table) + "DAOTest.java", 'a') as f:
 
     uniqueFunc = []
     for func in findFuncArray:
-        sqlWhereVars = [makeSqlWhereVar(c) for c in func[0]]
+        sqlWhereVars = makeSqlWhereVars(func[0])
         if func[1] == "1":
             uniqueFunc = func
             f.write(POJOClass + " rt = " + findByWithArg(dao, sqlWhereVars)+"\n\n")
@@ -383,7 +401,7 @@ with open(sqlVarToClass(table) + "DAOTest.java", 'a') as f:
         f.write("Time timen = new Time(System.currentTimeMillis());\n")
         f.write(POJOClass + " rt;\n")
         for func in updateFuncArray:
-            sqlWhereVars = [makeSqlWhereVar(c) for c in func[0]]
+            sqlWhereVars = makeSqlWhereVars(func[0])
             args = []
             for vc in sqlWhereVars:
                 if getColsType(vc) == "Timestamp":
